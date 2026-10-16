@@ -1,0 +1,23 @@
+# ===== 敏感文件 =====
+.env
+*.env
+!.env.example
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== AI 缓存 =====
+src/ai_layer/cache/
+
+# ===== 构建产物 =====
+src/external_pipeline/build/
+src/external_pipeline/dist/
+releases/*/*.exe
+*.exe
+
+# ===== IDE =====
+.vscode/
+.vs/
+.idea/

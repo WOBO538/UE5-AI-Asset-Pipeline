@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Asset Intelligence Pipeline",
+	"Description": "AI 增强型资产智能管线的 UE 侧消费层",
+	"Category": "Tooling",
+	"CreatedBy": "WOBO538",
+	"CanContainContent": true,
+	"Modules": [],
+	"Plugins": []
+}
