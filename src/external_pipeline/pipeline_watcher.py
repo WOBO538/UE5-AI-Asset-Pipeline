@@ -2,6 +2,7 @@
 
 from ast import Set
 import os
+import re
 import sys
 import time
 import json
@@ -34,6 +35,10 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.ini")
 def load_config() -> dict:
     """读取同目录 config.ini，返回路径配置字典。若配置不存在或无效，调用 init_config_by_gui()。
 
+    UE 工程路径解析优先级（自高到低）：
+        1. 环境变量 UE_PROJECT_DIR（.uproject 所在目录，自动推导 <dir>/Content）—— 换工程 / CI 零配置
+        2. config.ini 的 [Paths] UE_PROJECT_CONTENT
+
     返回的 dict 期望包含以下键（供下层各函数使用）：
         pipeline_root     : 管线工作根目录（含 Inbox/Processing/Archive）
         ue_project_content: UE 项目的 Content 目录
@@ -42,40 +47,72 @@ def load_config() -> dict:
         archive           : 归档目录
         imported          : 资产最终复制位置（UE_PROJECT_CONTENT/Imported）
     """
-    # TODO: 1. 判断 CONFIG_PATH 是否存在，不存在则 return init_config_by_gui()
-    # TODO: 2. 用 configparser 读取 [Paths] 段的 PIPELINE_ROOT 与 UE_PROJECT_CONTENT
-    # TODO: 3. 校验二者非空且目录有效，无效则回退 init_config_by_gui()
-    # TODO: 4. 拼接出 inbox / processing / archive / imported 四个子路径
-    # TODO: 5. 返回组装好的 dict
+    # ① 环境变量 UE_PROJECT_DIR 优先
+    env_dir = os.environ.get("UE_PROJECT_DIR", "").strip()
+    env_content = None
+    if env_dir:
+        candidate = os.path.join(env_dir, "Content")
+        if os.path.isdir(candidate):
+            env_content = candidate
+            print(f"[配置] 使用环境变量 UE_PROJECT_DIR -> {candidate}")
+        else:
+            print(f"[配置] 警告：UE_PROJECT_DIR={env_dir} 下未找到 Content 目录，已忽略，回退 config.ini。")
+
+    # ② 无 config.ini 时：有环境变量可直接开工（工作根默认项目同盘 Asset_Pipeline），否则走 GUI 向导
     if not os.path.exists(CONFIG_PATH):
+        if env_content:
+            drive = os.path.splitdrive(env_content)[0]
+            pipeline_root = f"{drive}/Asset_Pipeline"
+            _write_config(pipeline_root, env_content)
+            return _build_paths(pipeline_root, env_content)
         return init_config_by_gui()
 
+    # ③ config.ini 读取（环境变量命中时覆盖 UE_PROJECT_CONTENT）
     cfg = configparser.ConfigParser()
     cfg.read(CONFIG_PATH, encoding="utf-8")
-    pipeline_root = cfg["Paths"]["PIPELINE_ROOT"]
-    ue_content = cfg["Paths"]["UE_PROJECT_CONTENT"]
+    pipeline_root = ""
+    ue_content = env_content
+    if cfg.has_section("Paths"):
+        pipeline_root = cfg["Paths"].get("PIPELINE_ROOT", "").strip()
+        if not ue_content:
+            ue_content = cfg["Paths"].get("UE_PROJECT_CONTENT", "").strip()
 
-    if not pipeline_root or not ue_content:
-        print("配置为空，启动初始化向导...")
+    # ④ 校验有效性，无效回退 GUI 向导
+    if not ue_content or not os.path.isdir(ue_content):
+        print("配置的 UE 工程 Content 路径无效或不存在，启动初始化向导...")
         return init_config_by_gui()
 
-    if not os.path.isdir(pipeline_root) or not os.path.isdir(ue_content):
-        print("配置的路径无效或不存在，启动初始化向导...")
+    if not pipeline_root or not os.path.isdir(pipeline_root):
+        print("配置的管线工作根目录无效或不存在，启动初始化向导...")
         return init_config_by_gui()
 
-    inbox = os.path.join(pipeline_root, "Inbox")
-    processing = os.path.join(pipeline_root, "Processing")
-    archive = os.path.join(pipeline_root, "Archive")
-    imported = os.path.join(ue_content, "Imported")
+    return _build_paths(pipeline_root, ue_content)
 
+
+def _build_paths(pipeline_root: str, ue_content: str) -> dict:
+    """由工作根目录 + UE Content 拼接出四个子路径，返回路径配置字典。"""
     return {
         "pipeline_root": pipeline_root,
         "ue_project_content": ue_content,
-        "inbox": inbox,
-        "processing": processing,
-        "archive": archive,
-        "imported": imported,
+        "inbox": os.path.join(pipeline_root, "Inbox"),
+        "processing": os.path.join(pipeline_root, "Processing"),
+        "archive": os.path.join(pipeline_root, "Archive"),
+        "imported": os.path.join(ue_content, "Imported"),
     }
+
+
+def _write_config(pipeline_root: str, ue_content: str) -> None:
+    """把工作根目录与 UE Content 写入 config.ini（UTF-8）。"""
+    cfg = configparser.ConfigParser()
+    cfg["Paths"] = {
+        "PIPELINE_ROOT": pipeline_root.replace("\\", "/").rstrip("/"),
+        "UE_PROJECT_CONTENT": ue_content.replace("\\", "/").rstrip("/"),
+    }
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        cfg.write(f)
+    print(f"[配置] 已自动写入 config.ini：{CONFIG_PATH}")
+
+
 def init_config_by_gui() -> dict:
     """弹出 tkinter 文件选择器让用户选 .uproject，推导出 Content 路径，生成 config.ini。
 
@@ -128,19 +165,7 @@ def init_config_by_gui() -> dict:
 
     print(f"配置已保存：{CONFIG_PATH}")
 
-    inbox = os.path.join(pipeline_root, "Inbox")
-    processing = os.path.join(pipeline_root, "Processing")
-    archive = os.path.join(pipeline_root, "Archive")
-    imported = os.path.join(ue_content, "Imported")
-
-    return {
-        "pipeline_root": pipeline_root,
-        "ue_project_content": ue_content,
-        "inbox": inbox,
-        "processing": processing,
-        "archive": archive,
-        "imported": imported,
-    }
+    return _build_paths(pipeline_root, ue_content)
 
 
 # ==========================================
@@ -218,6 +243,58 @@ def move_with_retry(src: str, dst: str):
         print(f"警告：源文件删除失败，但不影响主流程。原因：{e}")
 
 
+def _dedupe_path(path: str) -> str:
+    """目标路径已存在时自动追加 _1 / _2 后缀，避免同名文件互相覆盖。"""
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(f"{base}_{i}{ext}"):
+        i += 1
+    return f"{base}_{i}{ext}"
+
+
+def _normalize_loose_zip(extract_dir: str) -> str:
+    """散装包智能容错：解压内容中没有 Content 目录时，自动创建 Content 并把所有内容整体收纳。
+
+    策略（不对使用者设门槛，美术随手打的包也能跑）：
+        1. 在解压目录下新建 Content/
+        2. 把解压出来的所有条目（文件 + 子文件夹）原样整体移入 Content/，保留原有目录结构
+        3. 同名条目自动加 _1 / _2 后缀，避免覆盖
+    随后照常进入 manifest 生成流程；返回 Content 目录路径。
+    """
+    content_dir = os.path.join(extract_dir, "Content")
+    os.makedirs(content_dir, exist_ok=True)
+
+    for entry in os.listdir(extract_dir):
+        if entry == "Content":
+            continue  # 跳过刚创建的目标目录自身
+        src = os.path.join(extract_dir, entry)
+        dst = _dedupe_path(os.path.join(content_dir, entry))
+        shutil.move(src, dst)
+
+    print("[容错] 未检测到 Content 目录，已自动创建并收纳所有资产。")
+    return content_dir
+
+
+def _find_first_image(root_dir: str):
+    """递归找第一张可用图片（.png/.jpg/.jpeg/.tga），无则返回 None。
+
+    按完整路径排序，保证"第一张"语义确定（跨机器结果一致）。
+    """
+    hits = []
+    for dirpath, _dirs, files in os.walk(root_dir):
+        for f in files:
+            if f.lower().endswith((".png", ".jpg", ".jpeg", ".tga")):
+                hits.append(os.path.join(dirpath, f))
+    return sorted(hits)[0] if hits else None
+
+
+def _sanitize_prefix(name: str) -> str:
+    """把 zip 名清洗成 ComfyUI filename_prefix 安全形式（保留中英文/数字/下划线/连字符）。"""
+    return re.sub(r"[^0-9A-Za-z_\-]", "_", name)[:60]
+
+
 # ==========================================
 # 核心处理层
 # ==========================================
@@ -273,8 +350,10 @@ def process_zip(zip_path: str, paths: dict):
             break  # 找到第一个就退出循环，别往下找了
 
     if not content_dir:
-        print(f"警告：在 {name} 中未找到 Content 文件夹，无法继续。")
-        return
+        # 智能容错：散装包自动创建 Content 并整体收纳所有资产，再继续跑清单流程
+        content_dir = _normalize_loose_zip(extract_dir)
+        if not content_dir:
+            return
     # 6. 复制资产并记录清单
     imported_assets = []  # 记录 UE 清单的数组
 
@@ -291,8 +370,8 @@ def process_zip(zip_path: str, paths: dict):
             # 复制文件
             shutil.copy2(src_file, dst_file)
 
-    # 7. 判断扩展名，记录 UE 虚拟路径
-            if file.lower().endswith(('.uasset', '.umap')):
+    # 7. 判断扩展名，记录 UE 虚拟路径（常见 UE 资产格式全覆盖，原始美术资产 .fbx/.png/.tga 等不再被忽略）
+            if file.lower().endswith(('.uasset', '.umap', '.fbx', '.obj', '.png', '.tga', '.jpg')):
                 # 把反斜杠转成正斜杠，并去掉后缀
                 game_path = "/Game/Imported/" + rel_path.replace("\\", "/")
                 game_path = os.path.splitext(game_path)[0]
@@ -300,7 +379,36 @@ def process_zip(zip_path: str, paths: dict):
 
     print(f"共复制 {len(imported_assets)} 个 UE 资产。")
 
-        # 8+9. 写 manifest 和 trigger 到 UE 项目的 Saved/AssetPipeline/Processing/{zip_name}/
+    # 8.【V3 x P2】PBR 生成：找到第一张输入图 → ComfyUI CHORD → 5 张贴图并入清单
+    # 成功：追加带标签的 PBR 条目；失败/异常：仅打印警告，继续用原图触发 UE，绝不阻断
+    try:
+        first_image = _find_first_image(content_dir) or _find_first_image(extract_dir)
+        if first_image:
+            print(f"[AI生成] 检测到输入图：{first_image}")
+            from comfy_client import ComfyUIClient  # 延迟 import：单文件即模块，故障也只走兜底
+
+            result = ComfyUIClient().generate_pbr(
+                first_image,
+                output_dir=os.path.join(paths["imported"], "PBR", name),
+                prefix=_sanitize_prefix(name),
+            )
+            if result.get("status") == "success":
+                for f in result.get("files", []):
+                    base = os.path.splitext(os.path.basename(f))[0]
+                    imported_assets.append({
+                        "path": f"/Game/Imported/PBR/{name}/{base}",
+                        "is_generated": True,
+                        "type": "PBR",
+                    })
+                print(f"[AI生成] 成功：{len(result.get('files', []))} 张 PBR 贴图已加入清单。")
+            else:
+                print(f"[AI生成] 降级兜底：{result.get('reason')}（继续用原图触发 UE）")
+        else:
+            print("[AI生成] 包内未找到图片（.png/.jpg/.tga），跳过 PBR 生成。")
+    except Exception as e:
+        print(f"[AI生成] 异常降级兜底：{e}（继续用原图触发 UE）")
+
+        # 9. 写 manifest 和 trigger 到 UE 项目的 Saved/AssetPipeline/Processing/{zip_name}/
     ue_project_root = os.path.dirname(paths["ue_project_content"])
     ue_processing_dir = os.path.join(ue_project_root, "Saved", "AssetPipeline", "Processing", name)
     os.makedirs(ue_processing_dir, exist_ok=True)

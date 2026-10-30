@@ -21,3 +21,11 @@ releases/*/*.exe
 .vscode/
 .vs/
 .idea/
+
+# ===== 大体积演示素材 =====
+# docs/demo.gif 约 68 MB，超过 GitHub 单文件建议值（50 MB），请用 Git LFS 或图床：
+#   git lfs track "docs/demo.gif"
+docs/demo.gif
+
+# ===== 本地配置（含个人绝对路径，不发布） =====
+releases/*/config.ini

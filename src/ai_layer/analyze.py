@@ -2,6 +2,8 @@
 
 AI 层是纯 Python，由 UE 消费层调用：UE 消费层读 import_manifest.json 后，
 把 assets 列表 + ue_project_content 传入 analyze_manifest。
+
+通用 AI 配置（多提供商、四段式 Key 读取）见 config.py。
 """
 
 import json
@@ -9,25 +11,28 @@ import os
 import re
 import time
 
-from dotenv import load_dotenv
-
 try:
     from . import cache
+    from . import config
     from . import prompt_templates
-    from .mock_ai import mock_response
+    from . import mock_ai
 except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import cache
+    import config
     import prompt_templates
     from mock_ai import mock_response
 
-load_dotenv()  # 读取同目录 .env（仅 AI 配置）；路径由入参 ue_project_content 传入
+# ---- 通用 AI 配置：四段式读取（系统环境变量 -> .env -> 交互输入 -> 降级兜底）----
+# 与具体提供商解耦，支持 DeepSeek / OpenAI / 自定义，config.py 内部同步装载 .env
+_CFG = config.load_ai_config()
 
-API_KEY = os.environ.get("DEEPSEEK_API_KEY")
-MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
-BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+API_KEY = _CFG["api_key"]
+PROVIDER = _CFG["provider"]
+MODEL = _CFG["model"]
+BASE_URL = _CFG["base_url"]
 BATCH_SIZE = int(os.environ.get("AI_BATCH_SIZE", "20"))
 TIMEOUT = float(os.environ.get("AI_TIMEOUT", "30.0"))
 MAX_RETRIES = int(os.environ.get("AI_MAX_RETRIES", "3"))
@@ -122,6 +127,7 @@ def analyze_manifest(manifest: dict, ue_project_content: str,
     if not mock and API_KEY is None:
         return {
             "analyzed_at": _now_iso(),
+            "provider": PROVIDER,
             "model": None,
             "results": [],
             "failures": [{"asset_path": p, "reason": "KEY_MISSING"}
@@ -154,6 +160,7 @@ def analyze_manifest(manifest: dict, ue_project_content: str,
 
     return {
         "analyzed_at": _now_iso(),
+        "provider": "mock" if mock else PROVIDER,
         "model": "mock" if mock else MODEL,
         "results": results,
         "failures": failures,

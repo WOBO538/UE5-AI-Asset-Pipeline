@@ -1,0 +1,131 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "chord_v1.safetensors"
+    },
+    "class_type": "ChordLoadModel",
+    "_meta": {
+      "title": "Chord - Load Model",
+      "aux_id": "ubisoft/ComfyUI-Chord",
+      "ver": "53296391fe2cf7f3f370a5c6536dcb2177221257"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "cobblestone_color_diff_1k.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  },
+  "3": {
+    "inputs": {
+      "chord_model": [
+        "1",
+        0
+      ],
+      "image": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ChordMaterialEstimation",
+    "_meta": {
+      "title": "Chord - Material Estimation",
+      "aux_id": "ubisoft/ComfyUI-Chord",
+      "ver": "53296391fe2cf7f3f370a5c6536dcb2177221257"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "basecolor",
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Base Color",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  },
+  "5": {
+    "inputs": {
+      "filename_prefix": "normal",
+      "images": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Normal",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  },
+  "6": {
+    "inputs": {
+      "filename_prefix": "roughness",
+      "images": [
+        "3",
+        2
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Roughness",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  },
+  "7": {
+    "inputs": {
+      "filename_prefix": "metalness",
+      "images": [
+        "3",
+        3
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Metalness",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  },
+  "8": {
+    "inputs": {
+      "normal": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "ChordNormalToHeight",
+    "_meta": {
+      "title": "Chord - Normal to Height",
+      "aux_id": "ubisoft/ComfyUI-Chord",
+      "ver": "53296391fe2cf7f3f370a5c6536dcb2177221257"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "height",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Height",
+      "cnr_id": "comfy-core",
+      "ver": "0.3.76"
+    }
+  }
+}
