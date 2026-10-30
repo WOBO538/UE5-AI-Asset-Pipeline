@@ -1,4 +1,4 @@
-# Asset Pipeline v0.1.0
+# Asset Pipeline v3.0.0
 
 美术资产自动流转工具（外部流转层）。
 

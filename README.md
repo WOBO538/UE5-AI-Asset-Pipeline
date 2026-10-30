@@ -8,7 +8,7 @@
 
 [![Bilibili](https://img.shields.io/badge/Bilibili-观看完整演示-00A1D6?logo=bilibili)](https://www.bilibili.com/video/BV1a3Ji6gE7E)
 
-![Demo](docs/demo.gif)
+[演示视频见 Bilibili: BV1a3Ji6gE7E]
 
 ## 核心亮点
 
