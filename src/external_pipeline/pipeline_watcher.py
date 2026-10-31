@@ -291,8 +291,9 @@ def _find_first_image(root_dir: str):
 
 
 def _sanitize_prefix(name: str) -> str:
-    """把 zip 名清洗成 ComfyUI filename_prefix 安全形式（保留中英文/数字/下划线/连字符）。"""
-    return re.sub(r"[^0-9A-Za-z_\-]", "_", name)[:60]
+    """复用生成层的统一命名规则（保留中文等 Unicode 字符），避免两处实现漂移。"""
+    from comfy_client import sanitize_prefix  # 延迟导入：保持本模块可独立启动
+    return sanitize_prefix(name)
 
 
 # ==========================================

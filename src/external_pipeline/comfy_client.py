@@ -47,6 +47,32 @@ COMFY_INPUT_DIR = Path(r"D:\AI\ComfyUI\ComfyUI_windows_portable\ComfyUI\input")
 # 不再硬编码桌面路径，换机器 / 桌面文件被移走都不会失效
 TEMPLATE_FILENAME = "chord_api_template.json"
 
+# 前缀命名的统一规则（ComfyUI filename_prefix 与 UE 资产名共用）
+# 只屏蔽 Windows 文件名非法字符，中文等 Unicode 字符原样保留
+_ILLEGAL_FILENAME_CHARS = set('\\/:*?"<>|')
+PREFIX_MAX_CHARS = 40
+DEFAULT_PREFIX = "material"
+
+
+def sanitize_prefix(name: str, max_chars: int = PREFIX_MAX_CHARS) -> str:
+    """把 zip 名清洗成 ComfyUI filename_prefix 与 UE 资产名通用的合法字符串。
+
+    规则：
+        - 保留中文等 Unicode 常规字符（不再把中文替换成下划线）；
+        - 只替换 Windows 文件名非法字符 \\ / : * ? " < > | 与控制字符（含换行）；
+        - 按字符数截断（不按字节，避免中文被截成乱码），首尾空白 trim；
+        - 清洗后为空时回退 DEFAULT_PREFIX。
+    """
+    text = str(name or "")
+    cleaned = "".join(
+        "_" if (ch in _ILLEGAL_FILENAME_CHARS or ord(ch) < 32 or ord(ch) == 127) else ch
+        for ch in text
+    )
+    cleaned = cleaned.strip()
+    if len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars].strip()
+    return cleaned or DEFAULT_PREFIX
+
 
 def _resolve_template_path() -> Path:
     """按优先级解析工作流模板路径（支持环境变量覆盖，便于部署时替换模板）。"""
@@ -161,6 +187,9 @@ class ComfyUIClient:
         """
         with open(self.template_path, "r", encoding="utf-8") as f:
             workflow = json.load(f)
+
+        # 前缀统一清洗：既进 ComfyUI 输出文件名，也进 UE 资产名，规则必须两处一致
+        prefix = sanitize_prefix(prefix)
 
         # ① LoadImage 节点（模板中是 "2"）：输入图统一暂存到 ComfyUI input 后
         #    提交相对路径（正斜杠），规避便携版对 input 目录外绝对路径的校验

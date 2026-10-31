@@ -68,6 +68,18 @@ _PBR_PARAM_NAMES = {
 }
 _MASTER_MATERIAL_DIR = "/Game/AssetPipeline/MasterMaterials"
 _MASTER_MATERIAL_NAME = "M_Master_PBR"
+# 母材质里法线参数槽的默认贴图：必须是一张法线贴图，否则表达式会回退到
+# /Engine/EngineResources/DefaultTexture（颜色贴图），与 SAMPLERTYPE_NORMAL 不匹配，
+# 引擎持续报 "Sampler type is 法线, should be 颜色 for DefaultTexture"
+_DEFAULT_NORMAL_TEX = "/Engine/EngineMaterials/DefaultNormal"
+# 参数名 -> 母材质输出属性：用于通过 get_material_property_input_node 反查表达式。
+# 注意 Height 未接任何输出（仅作为参数储备），无法通过该 API 定位。
+_PARAM_TO_MATERIAL_PROPERTY = {
+    "BaseColor": "MP_BASE_COLOR",
+    "Normal": "MP_NORMAL",
+    "Roughness": "MP_ROUGHNESS",
+    "Metalness": "MP_METALLIC",
+}
 
 
 def check_and_process_pipeline():
@@ -329,22 +341,34 @@ def _ensure_texture_asset(asset_path):
 
 
 def _apply_texture_settings(asset_path, suffix):
-    """按后缀设置贴图 sRGB / 压缩：BaseColor 开 sRGB，Normal 用 Normalmap，其余关 sRGB。"""
+    """按后缀设置贴图 sRGB / 压缩：BaseColor 用 TC_DEFAULT 且 sRGB=True，
+    Normal 用 TC_NORMALMAP 且 sRGB=False，其余 TC_DEFAULT 且 sRGB=False，随后落盘。
+
+    注意：unreal.TextureCompressionSettings 的成员名是大写形式（TC_NORMALMAP /
+    TC_DEFAULT）。旧实现写的 TC_Normalmap / TC_Default 在 getattr 上是 None，
+    压缩设置实际从未生效（法线贴图被当成颜色贴图导入），这也是法线相关警告的诱因之一。
+    """
     try:
         tex = unreal.EditorAssetLibrary.load_asset(asset_path)
         if tex is None:
             return
         srgb = suffix == "_BaseColor"
         tex.set_editor_property("srgb", srgb)
+
         comp_enum = getattr(unreal, "TextureCompressionSettings", None)
-        comp = getattr(comp_enum, "TC_Normalmap" if suffix == "_Normal" else "TC_Default", None) \
-            if comp_enum is not None else None
+        comp_name = "TC_NORMALMAP" if suffix == "_Normal" else "TC_DEFAULT"
+        comp = getattr(comp_enum, comp_name, None) if comp_enum is not None else None
         if comp is not None:
             tex.set_editor_property("compression_settings", comp)
+        else:
+            unreal.log_warning(f"[材质] 引擎缺少 {comp_name}，压缩设置未应用：{asset_path}")
+
         save_loaded = getattr(unreal.EditorAssetLibrary, "save_loaded_asset", None)
         if callable(save_loaded):
             save_loaded(tex)
-        unreal.log(f"[材质] 贴图属性已设置（sRGB={srgb}）：{asset_path}")
+        applied_comp = tex.get_editor_property("compression_settings")
+        unreal.log(f"[材质] 贴图属性已设置（sRGB={tex.get_editor_property('srgb')}，"
+                   f"压缩={applied_comp}）：{asset_path}")
     except Exception as e:
         unreal.log_warning(f"[材质] 设置贴图属性失败（忽略）：{asset_path}（{e}）")
 
@@ -375,6 +399,83 @@ def _save_asset(asset, asset_path):
         return False
 
 
+def _find_material_expression(master, param_name):
+    """在母材质里查找指定参数名的贴图采样表达式；找不到/API 不可用都返回 None。
+
+    UE 5.7 实测：MaterialEditingLibrary 没有 get_material_expressions，
+    Material.expressions 是 protected 属性（读取会抛异常），所以唯一可行入口是
+    get_material_property_input_node(master, MaterialProperty)。母材质里
+    BaseColor/Normal/Roughness/Metalness 都已接到对应属性输入，Height 未接管出
+    （仅参数储备），无法通过该 API 定位。
+    """
+    mel = _material_editing_library()
+    prop_key = _PARAM_TO_MATERIAL_PROPERTY.get(param_name)
+    prop_enum = getattr(unreal, "MaterialProperty", None)
+    node_getter = (getattr(mel, "get_material_property_input_node", None)
+                   if mel is not None else None)
+    if prop_key and prop_enum is not None and callable(node_getter):
+        prop = getattr(prop_enum, prop_key, None)
+        if prop is not None:
+            try:
+                node = node_getter(master, prop)
+            except Exception:
+                node = None
+            if node is not None:
+                return node
+
+    # 兜底：极少数版本可能暴露了表达式枚举 API，尝试一下（不可用则直接返回 None）
+    expressions = None
+    getter = getattr(getattr(unreal, "MaterialEditingLibrary", None),
+                     "get_material_expressions", None)
+    if callable(getter):
+        try:
+            expressions = getter(master)
+        except Exception:
+            expressions = None
+    if expressions is None:
+        return None
+    expr_cls = getattr(unreal, "MaterialExpressionTextureSampleParameter2D", None)
+    for expr in expressions or []:
+        try:
+            if expr_cls is not None and not isinstance(expr, expr_cls):
+                continue
+            if expr.get_editor_property("parameter_name") == param_name:
+                return expr
+        except Exception:
+            continue
+    return None
+
+
+def _repair_master_normal_default(master_path):
+    """把已有母材质的法线参数默认贴图修成 DefaultNormal（幂等），消除采样器不匹配警告。"""
+    try:
+        master = unreal.EditorAssetLibrary.load_asset(master_path)
+        if master is None:
+            return
+        expr = _find_material_expression(master, "Normal")
+        if expr is None:
+            return
+        current = expr.get_editor_property("texture")
+        if current is not None and current.get_path_name().startswith(_DEFAULT_NORMAL_TEX):
+            return  # 已经是法线贴图，无需处理
+        default_normal = unreal.EditorAssetLibrary.load_asset(_DEFAULT_NORMAL_TEX)
+        if default_normal is None:
+            unreal.log_warning(f"[材质] 未找到 {_DEFAULT_NORMAL_TEX}，无法修复母材质法线默认贴图。")
+            return
+        expr.set_editor_property("texture", default_normal)
+        sampler_enum = getattr(unreal, "MaterialSamplerType", None)
+        if sampler_enum is not None:
+            expr.set_editor_property("sampler_type", sampler_enum.SAMPLERTYPE_NORMAL)
+        mel = _material_editing_library()
+        recompile = getattr(mel, "recompile_material", None) if mel is not None else None
+        if callable(recompile):
+            recompile(master)
+        if _save_asset(master, master_path):
+            unreal.log(f"[材质] 已修复母材质法线默认贴图并保存：{master_path}")
+    except Exception as e:
+        unreal.log_warning(f"[材质] 修复母材质法线默认贴图失败（忽略）：{e}")
+
+
 def _ensure_master_material():
     """确保母材质存在，返回其资产路径；创建/保存失败返回 None（只记日志，不抛异常）。
 
@@ -385,9 +486,12 @@ def _ensure_master_material():
     master_path = f"{_MASTER_MATERIAL_DIR}/{_MASTER_MATERIAL_NAME}"
     try:
         if unreal.EditorAssetLibrary.does_asset_exist(master_path):
+            # 老工程里的母材质可能仍是「法线参数默认贴图 = DefaultTexture」的旧版本，
+            # 这里做一次就地修复（幂等：已经是 DefaultNormal 就直接返回）
+            _repair_master_normal_default(master_path)
             return master_path
-    except Exception:
-        pass
+    except Exception as e:
+        unreal.log_warning(f"[材质] 检查已有母材质失败（继续尝试创建）：{e}")
 
     mel = _material_editing_library()
     material_cls = getattr(unreal, "Material", None)
@@ -421,6 +525,22 @@ def _ensure_master_material():
             except Exception as e:
                 unreal.log_warning(f"[材质] 设置参数名失败（{param_name}）：{e}")
             if param_name == "Normal":
+                # 先给法线参数槽一张真正的法线贴图作为默认值，再切采样器类型：
+                # 顺序反了会在切换瞬间报警；留空则永远回退到 DefaultTexture（颜色贴图），
+                # 引擎会持续报 "Sampler type is 法线, should be 颜色 for DefaultTexture"
+                default_normal = None
+                try:
+                    default_normal = unreal.EditorAssetLibrary.load_asset(_DEFAULT_NORMAL_TEX)
+                except Exception as e:
+                    unreal.log_warning(f"[材质] 加载默认法线贴图失败：{e}")
+                if default_normal is not None:
+                    try:
+                        expr.set_editor_property("texture", default_normal)
+                    except Exception as e:
+                        unreal.log_warning(f"[材质] 设置法线默认贴图失败（忽略）：{e}")
+                else:
+                    unreal.log_warning(
+                        f"[材质] 未找到 {_DEFAULT_NORMAL_TEX}，法线参数仍会回退到默认颜色贴图。")
                 try:
                     sampler_enum = getattr(unreal, "MaterialSamplerType", None)
                     if sampler_enum is not None:
