@@ -1,0 +1,7 @@
+; 这是配置示例文件。
+; 首次运行 AssetPipeline.exe 会自动弹出配置向导。
+; 只有在需要手动修改时才参考本文件，重命名为 config.ini 放到 exe 同目录。
+
+[Paths]
+PIPELINE_ROOT = D:/Asset_Pipeline
+UE_PROJECT_CONTENT = D:/Your_UE_Project/Content
