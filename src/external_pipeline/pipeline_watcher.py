@@ -482,13 +482,117 @@ def scan_and_process(paths: dict):
         time.sleep(POLL_INTERVAL)
 
 
+# ==========================================
+# API Key 首次配置向导（exe 入口侧）
+# ==========================================
+
+def _load_env_path_module():
+    """惰性导入 env_path（exe 内为 bundled 标准库模块；源码态从 src/ai_layer 兜底加载）。"""
+    try:
+        import env_path
+        return env_path
+    except ImportError:
+        # 源码态：src/ai_layer 与本文件不同目录，把 ai_layer 目录插入 sys.path 后重试
+        _ai_layer_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_layer"
+        )
+        if os.path.isdir(_ai_layer_dir) and _ai_layer_dir not in sys.path:
+            sys.path.insert(0, _ai_layer_dir)
+        import env_path
+        return env_path
+
+
+def _test_injected_key():
+    """测试专用非交互注入：--set-key <值> 或环境变量 ASSET_PIPELINE_SET_KEY。
+
+    返回 None=未注入；''（空串）=注入「留空/取消」；其它字符串=注入该 Key。
+    """
+    if "--set-key" in sys.argv:
+        idx = sys.argv.index("--set-key")
+        return sys.argv[idx + 1] if idx + 1 < len(sys.argv) else ""
+    env_val = os.environ.get("ASSET_PIPELINE_SET_KEY")
+    if env_val is not None:
+        return env_val
+    return None
+
+
+def _ensure_api_key_configured() -> None:
+    """首次运行 API Key 配置向导：检查 .env 的 AI_API_KEY，未配置则弹窗引导填写。
+
+    安全红线：
+        - 任何日志 / 回显绝不出现完整 Key，只打印 mask_key() 的前 6 位 + '...'；
+        - 无 GUI / 弹窗失败 / 非交互启动 → 一律降级为「按未配置继续跑」，绝不阻塞或崩溃。
+    """
+    try:
+        ep = _load_env_path_module()
+        env_path = ep.resolve_env_path()
+    except Exception:
+        # env_path 是纯标准库模块，理论上不会失败；兜底降级，绝不阻塞启动
+        return
+
+    # ① 测试注入路径（绕过 GUI，供自动化验证）：留空不写、有值写入
+    injected = _test_injected_key()
+    if injected is not None:
+        if injected == "":
+            print("[配置] [测试注入] API Key 留空：不写入，走 AI 层降级兜底。")
+            return
+        try:
+            ep.write_env_value(env_path, "AI_API_KEY", injected)
+            print("[配置] [测试注入] 已写入 {0}（{1}）。".format(env_path, ep.mask_key(injected)))
+        except Exception as exc:
+            print("[配置] [测试注入] 写入失败，降级继续：{0}".format(exc))
+        return
+
+    # ② 读当前 Key：已配置且非占位符 → 直接跳过向导
+    try:
+        current = ep.read_env_file(env_path).get("AI_API_KEY", "")
+    except Exception:
+        current = ""
+    if current and not ep.is_placeholder_key(current):
+        print("[配置] DeepSeek API Key 已配置（{0}）。".format(ep.mask_key(current)))
+        return
+
+    # ③ 未配置 → 尝试弹窗（tkinter 不可用 / 无桌面会话 → 捕获异常降级）
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+    except Exception:
+        print("[配置] 环境无 GUI（tkinter 不可用），按未配置继续运行。")
+        return
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        entered = simpledialog.askstring(
+            "DeepSeek API Key 配置",
+            "检测到未配置 DeepSeek API Key，请粘贴您的 Key（直接回车跳过将降级运行）：",
+            parent=root,
+        )
+        root.destroy()
+    except Exception:
+        print("[配置] 无法弹出配置窗口（无桌面会话 / 非交互启动），按未配置继续运行。")
+        return
+
+    if not entered or not entered.strip():
+        print("[配置] 用户未提供 API Key，不写入，走 AI 层降级兜底。")
+        return
+
+    try:
+        ep.write_env_value(env_path, "AI_API_KEY", entered.strip())
+        print("[配置] DeepSeek API Key 已写入 {0}（{1}）。".format(env_path, ep.mask_key(entered.strip())))
+    except Exception as exc:
+        print("[配置] 写入 .env 失败，降级继续：{0}".format(exc))
+
+
 def main():
-    """程序入口：加载配置 → 确保目录 → 进入轮询主循环。"""
+    """程序入口：配置 API Key（如缺）→ 加载配置 → 确保目录 → 进入轮询主循环。"""
     # TODO: 1. paths = load_config()
     # TODO: 2. ensure_directories(paths)
     # TODO: 3. 打印监控目录 / 导入目录信息
     # TODO: 4. scan_and_process(paths)
     # TODO: 5. 用 try/except KeyboardInterrupt 捕获 Ctrl+C，打印"轮询已停止"
+    _ensure_api_key_configured()
     paths = load_config()
     ensure_directories(paths)
     

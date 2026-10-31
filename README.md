@@ -2,6 +2,8 @@
 
 > 让资产管线长出大脑：AI 语义分析驱动的资产校验、智能命名与 PCG 场景生成全自动流水线 —— 支持 DeepSeek / OpenAI 多模型可插拔，Key 缺失零中断。
 
+> 🚀 **下载即用**：非技术用户直接下载 `AssetPipeline.exe` **双击即可运行**，**首次运行会自动引导配置 DeepSeek API Key**（跳过则自动降级，管线照常运转）。
+
 ![UE 5.7](https://img.shields.io/badge/UE-5.7-0E1128?style=flat-square&logo=unrealengine&logoColor=white) ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white) ![AI-Powered](https://img.shields.io/badge/AI-Powered-8A2BE2?style=flat-square&logo=openai&logoColor=white)
 
 ## 🎬 演示视频
@@ -97,7 +99,9 @@ python src/ai_layer/analyze.py \
 
 ### 美术使用者（交互式引导，免 .env）
 
-没有配置 Key 时，运行 `analyze.py` 会自动进入终端引导，三步完成接入：
+**只下载 `AssetPipeline.exe` 时**：双击运行，首次启动会弹出窗口引导粘贴 DeepSeek API Key（也可直接回车跳过，自动降级）。Key 会写入与 exe 同级的 `.env`，下次免输。
+
+开发者 / 完整仓库用户：没有配置 Key 时，运行 `analyze.py` 会自动进入终端引导，三步完成接入：
 
 ```
 未检测到 API Key，请手动输入（直接回车跳过，将启用纯规则/Mock 降级模式）：sk-xxxx

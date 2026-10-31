@@ -28,7 +28,14 @@ PROVIDER_PRESETS = {
 
 _KEY_NAMES = ("AI_PROVIDER", "AI_API_KEY", "AI_BASE_URL", "AI_MODEL")
 
-_ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+# .env 路径统一走 env_path.resolve_env_path()：与 exe 首次配置向导共用同一解析函数，
+# 保证「写到哪、读到哪」一致。源码态 resolve_env_path() 仍指向本模块同目录 .env，开发环境不变。
+try:
+    from .env_path import resolve_env_path
+except ImportError:
+    from env_path import resolve_env_path
+
+_ENV_FILE = resolve_env_path()
 
 _PROMPT_KEY = "未检测到 API Key，请手动输入（直接回车跳过，将启用纯规则/Mock 降级模式）："
 _PROMPT_PROVIDER = "选择提供商（1-DeepSeek, 2-OpenAI, 3-自定义）："
