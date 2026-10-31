@@ -29,3 +29,4 @@ docs/demo.gif
 
 # ===== 本地配置（含个人绝对路径，不发布） =====
 releases/*/config.ini
+src/external_pipeline/config.ini
