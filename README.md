@@ -8,9 +8,15 @@
 
 ## 🎬 演示视频
 
-[![Bilibili](https://img.shields.io/badge/Bilibili-观看完整演示-00A1D6?logo=bilibili)](https://www.bilibili.com/video/BV1a3Ji6gE7E)
+[![UE5 AI 资产管线 V3 演示视频（点击播放）](docs/demo-cover-v3.jpg)](https://www.bilibili.com/video/BV1aP436WEw9/)
 
-[演示视频见 Bilibili: BV1a3Ji6gE7E]
+**[📺 点击观看 Bilibili 演示视频](https://www.bilibili.com/video/BV1aP436WEw9/)**
+
+[![Bilibili](https://img.shields.io/badge/Bilibili-观看完整演示-00A1D6?logo=bilibili)](https://www.bilibili.com/video/BV1aP436WEw9/)
+
+视频标题：《UE5 AI管线 V3：接入ComfyUI+CHORD，把AI生成的不确定性治理进引擎》 · 时长 2 分 27 秒 · BV 号 `BV1aP436WEw9`
+
+早期端到端演示（v2，1 分 11 秒）：[BV1a3Ji6gE7E](https://www.bilibili.com/video/BV1a3Ji6gE7E)
 
 ## 核心亮点
 
