@@ -20,6 +20,14 @@
 
 > 网络受限时可播放仓库内离线录屏：[docs/ezgif-6653c965d1457a92.mp4](docs/ezgif-6653c965d1457a92.mp4)（3.9 MB）
 
+## ⚡ 30 秒摘要
+
+- **是什么**：资产 zip 丢进 Inbox → 自动解包 → 导入 UE → AI 语义分析 → 规则校验与自动改名 → 生成 PCG 场景。四层解耦，层间只走文件协议。
+- **最大实测规模**：310 个资产，外部流转 **0.21 秒**出清单；规则校验 150 资产 **3 秒内**。
+- **AI 成本**：DeepSeek 按 20 资产/批，单批约 **¥0.02**；缓存命中时零 API 调用。
+- **能不能直接跑**：[下载 `AssetPipeline.exe`](https://github.com/WOBO538/UE5-AI-Asset-Pipeline/raw/main/releases/v3.1.0/AssetPipeline.exe) 双击即可，没有 API Key 会自动降级为纯规则模式。
+- **代码在哪**：`src/`（Python）+ `plugin/`（UE 插件 Python）。四篇文档见下方导航。
+
 ## 📚 文档导航
 
 | 文档 | 内容 | 适合谁 |
