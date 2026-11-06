@@ -18,6 +18,19 @@
 
 早期端到端演示（v2，1 分 11 秒）：[BV1a3Ji6gE7E](https://www.bilibili.com/video/BV1a3Ji6gE7E)
 
+> 网络受限时可播放仓库内离线录屏：[docs/ezgif-6653c965d1457a92.mp4](docs/ezgif-6653c965d1457a92.mp4)（3.9 MB）
+
+## 📚 文档导航
+
+| 文档 | 内容 | 适合谁 |
+| --- | --- | --- |
+| [docs/architecture.md](docs/architecture.md) | 四层架构与文件契约：JSON schema、trigger、目录约定 | 想快速看懂整体设计 |
+| [docs/ai_layer_design.md](docs/ai_layer_design.md) | AI 层设计：多 Provider 抽象、四段式 Key 读取、内容寻址缓存、四段式容错 | 想看 AI 工程细节 |
+| [docs/performance.md](docs/performance.md) | 性能实测：测试环境、规模、原始 JSON、口径与推算过程 | 想验证数据是否可信 |
+| [docs/known_issues.md](docs/known_issues.md) | 10 条已知问题与能力边界（主动披露） | 想挑毛病的人 |
+
+> 最后一篇不是"免责声明"，是**边界清单**：哪些场景这套管线会给出错误结果、哪些接口 UE 不允许写、哪些降级路径还没测。写下来的目的就是让人能直接问到点上。
+
 ## 核心亮点
 
 ### 1. 四层解耦架构
@@ -81,7 +94,55 @@ API 层还带：指数退避重试（1s/2s/4s）、非法 JSON 多级剥壳解�
 
 **注意口径**：300+ 资产的「5 秒内」只针对外面两层（流转 + 校验）。加上 AI 语义层后是分钟级（300 资产 = 15 批 × 10–30 秒）。缓存命中时可跳过 API。
 
+## 🧪 运行证据
+
+**四段式 Key 读取的自动化测试**（`test_four_stages.py`；第 1–3 段：系统环境变量 → `.env` → 交互式输入并自动写回）
+
+![四段式测试 1/2](docs/four_stage_test_part1.png)
+
+![四段式测试 2/2](docs/four_stage_test_part2.png)
+
+**Inbox 监听与 FBX 修复日志**
+
+![watcher 日志](docs/watcher_fbx_fixed_log.png)
+
+> 以上是本地 PowerShell 的原始输出，未做美化。对应的测试方法、原始数据与复现步骤见 [docs/performance.md](docs/performance.md)。
+
+## 🧩 项目结构
+
+```text
+UE5-AI-Asset-Pipeline/
+├─ src/
+│  ├─ external_pipeline/          外部流转层（PyInstaller 打包为 AssetPipeline.exe）
+│  │  ├─ pipeline_watcher.py        Inbox 监听 / zip 解包 / 清单 / trigger / 归档
+│  │  ├─ comfy_client.py            ComfyUI 调用封装
+│  │  ├─ config/                    配置模板（chord_api_template.json）
+│  │  └─ AssetPipeline.spec         打包配置
+│  └─ ai_layer/                   AI 语义分析层
+│     ├─ analyze.py                 入口：按 20 资产/批调用
+│     ├─ config.py                  多 Provider + 四段式 Key 读取
+│     ├─ cache.py                   内容寻址缓存（SHA256 + TTL 30 天）
+│     ├─ env_path.py                环境与路径解析
+│     ├─ mock_ai.py                 无 Key 时的 Mock 实现
+│     └─ prompt_templates.py        提示词模板
+├─ plugin/AssetIntelligencePipeline/   UE 插件（Content/Python 驱动）
+│  └─ Content/Python/
+│     ├─ init_unreal.py             插件入口与生命周期
+│     ├─ pipeline_consumer.py       清单消费 / 调度 / 双格式报告
+│     ├─ asset_validator.py         规则校验（命名前缀 / 贴图设置）
+│     └─ pcg_builder.py             PCG 场景生成（模板挂载）
+├─ docs/                          架构 / AI 设计 / 性能 / 已知问题
+└─ releases/                      各版本说明与可执行文件
+```
+
 ## 快速上手
+
+### 下载即用（不装 Python）
+
+[**⬇ 下载 AssetPipeline.exe（11.4 MB，v3.1.0）**](https://github.com/WOBO538/UE5-AI-Asset-Pipeline/raw/main/releases/v3.1.0/AssetPipeline.exe)
+
+双击运行 → 首次启动会引导粘贴 API Key（可直接回车跳过，自动降级为纯规则模式，管线照常运转）。
+版本说明见 [releases/v3.1.0/README.md](releases/v3.1.0/README.md)。
 
 ### 开发者（推荐）
 
@@ -123,3 +184,20 @@ python src/ai_layer/analyze.py \
 ```
 
 直接回车跳过 → 自动降级为纯规则 / Mock 模式，**管线照常运转**——美术侧永远不需要碰配置文件。
+
+## ⚠️ 已知问题与能力边界
+
+这套管线不是万能的。主动列出三类边界（完整 10 条见 [docs/known_issues.md](docs/known_issues.md)）：
+
+- **UE 侧 API 边界**：PCG Graph 的部分参数在运行时不可写，所以场景生成走的是「预搭模板 + 挂载」，不是运行时动态构图。
+- **AI 的不确定性**：语义分析按批返回，单批失败会整批降级到纯规则；缓存 TTL 30 天，规则漂移期间结果可能短暂不一致。
+- **测过的规模**：最大实测 310 个资产（外部流转 0.21 s）。更大规模没有测过，不当作承诺。
+
+## 🔗 相关
+
+- 个人作品集：<https://www.shenqu.site>
+- 演示视频：<https://www.bilibili.com/video/BV1aP436WEw9/>
+
+## 📄 许可
+
+[MIT](LICENSE) © 2026 WOBO538

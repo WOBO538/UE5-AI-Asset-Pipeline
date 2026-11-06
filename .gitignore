@@ -16,6 +16,8 @@ src/external_pipeline/build/
 src/external_pipeline/dist/
 releases/*/*.exe
 *.exe
+# 仅放行最新发布版的可执行文件（README 里承诺了下载）；发新版时同步改这一行
+!releases/v3.1.0/AssetPipeline.exe
 
 # ===== IDE =====
 .vscode/
